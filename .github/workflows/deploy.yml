@@ -73,11 +73,46 @@ jobs:
             set -e
             IMAGE="ghcr.io/raidenmei02/remote-control-bridge:latest"
             DATA_DIR="${{ secrets.DEPLOY_DATA_DIR || '/opt/remote-control/data' }}"
+            RETRY_MAX=5
+            RETRY_DELAY=2
+            NON_RETRYABLE_PATTERNS='denied: denied|unauthorized|authentication required|invalid username|invalid password|insufficient_scope|requested access to the resource is denied|permission denied|forbidden'
+
+            retry() {
+              local max_attempts="$1"
+              local base_delay="$2"
+              shift 2
+
+              local attempt=1
+              while true; do
+                local output
+                if output=$("$@" 2>&1); then
+                  [ -n "$output" ] && echo "$output"
+                  return 0
+                fi
+
+                [ -n "$output" ] && echo "$output"
+
+                if echo "$output" | grep -Eiq "$NON_RETRYABLE_PATTERNS"; then
+                  echo "Non-retryable failure detected, stop retrying: $*"
+                  return 1
+                fi
+
+                if [ "$attempt" -ge "$max_attempts" ]; then
+                  echo "Command failed after ${attempt} attempts: $*"
+                  return 1
+                fi
+
+                local sleep_seconds=$((base_delay * attempt))
+                echo "Attempt ${attempt} failed, retrying in ${sleep_seconds}s: $*"
+                sleep "$sleep_seconds"
+                attempt=$((attempt + 1))
+              done
+            }
 
             mkdir -p "$DATA_DIR"
 
-            echo "${{ secrets.DOCKER_PASSWORD }}" | docker login ghcr.io -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-            docker pull "$IMAGE"
+            retry "$RETRY_MAX" "$RETRY_DELAY" sh -c 'echo "${{ secrets.DOCKER_PASSWORD }}" | docker login ghcr.io -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin'
+            retry "$RETRY_MAX" "$RETRY_DELAY" docker pull "$IMAGE"
 
             if docker ps -a --format '{{.Names}}' | grep -Eq '^remote-app$'; then
               docker stop remote-app || true
