@@ -71,7 +71,7 @@ jobs:
           port: ${{ secrets.SERVER_SSH_PORT || '22' }}
           script: |
             set -e
-            IMAGE="ghcr.io/${{ github.repository_owner }}/remote-control-bridge:latest"
+            IMAGE="ghcr.io/raidenmei02/remote-control-bridge:latest"
             DATA_DIR="${{ secrets.DEPLOY_DATA_DIR || '/opt/remote-control/data' }}"
 
             mkdir -p "$DATA_DIR"
