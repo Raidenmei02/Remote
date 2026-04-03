@@ -76,7 +76,7 @@ jobs:
 
             mkdir -p "$DATA_DIR"
 
-            echo "${{ secrets.DEPLOY_REGISTRY_TOKEN }}" | docker login ghcr.io -u "${{ secrets.DEPLOY_REGISTRY_USER }}" --password-stdin
+            echo "${{ secrets.DOCKER_PASSWORD }}" | docker login ghcr.io -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
             docker pull "$IMAGE"
 
             if docker ps -a --format '{{.Names}}' | grep -Eq '^remote-app$'; then
