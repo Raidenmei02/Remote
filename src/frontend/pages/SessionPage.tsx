@@ -1,0 +1,373 @@
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
+import type { SessionEventRecord } from '../../shared/protocol'
+import { JsonCodeBlock } from '../components/JsonCodeBlock'
+import { SessionStateRow } from '../components/SessionStateRow'
+import type { SessionDetail } from '../types'
+import {
+  autoResizeTextarea,
+  formatTime,
+  toneForSession,
+  toneForStream,
+  truncateText,
+} from '../utils/format'
+import { eventKey, eventSummary, formatEventBody } from '../utils/session'
+
+type SessionPageProps = {
+  session: SessionDetail | null
+  events: SessionEventRecord[]
+  streamStatus: string
+  sidebarCollapsed: boolean
+  sidebarWidth: number
+  sessionId: string
+  onBack: () => void
+  onToggleSidebar: () => void
+  onSidebarWidthChange: (width: number) => void
+  onSendMessage: (text: string) => Promise<void>
+}
+
+export function SessionPage({
+  session,
+  events,
+  streamStatus,
+  sidebarCollapsed,
+  sidebarWidth,
+  sessionId,
+  onBack,
+  onToggleSidebar,
+  onSidebarWidthChange,
+  onSendMessage,
+}: SessionPageProps) {
+  const [message, setMessage] = useState('')
+  const [isResizing, setIsResizing] = useState(false)
+  const shellRef = useRef<HTMLElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const timelineEvents = [...events].reverse()
+  const visibleMessages = events.filter(
+    event => event.type === 'user' || event.type === 'assistant',
+  )
+  const latestEvent = events.at(-1)
+  const title = session?.title || sessionId
+  const sessionTone = toneForSession(session?.status)
+  const statusText = session?.status || 'loading'
+  const collapsedCards = [
+    {
+      key: 'overview',
+      label: 'Session',
+      icon: <SessionGlyph />,
+      summary: truncateText(session?.environmentId || 'No env', 18),
+      detail: `${statusText} · ${streamStatus}`,
+    },
+    {
+      key: 'timeline',
+      label: 'Timeline',
+      icon: <TimelineGlyph />,
+      summary: `${timelineEvents.length} events`,
+      detail: latestEvent ? formatTime(latestEvent.createdAt) : 'No activity',
+    },
+    {
+      key: 'metadata',
+      label: 'Metadata',
+      icon: <CodeGlyph />,
+      summary: `seq ${session?.lastEventSeq ?? '—'}`,
+      detail: truncateText(session?.id || sessionId, 14),
+    },
+  ]
+
+  useEffect(() => {
+    autoResizeTextarea(inputRef.current)
+  }, [message])
+
+  useEffect(() => {
+    if (!isResizing) return
+
+    const onPointerMove = (event: PointerEvent) => {
+      const shell = shellRef.current
+      if (!shell) return
+      const bounds = shell.getBoundingClientRect()
+      const minWidth = 280
+      const maxWidth = Math.min(560, bounds.width * 0.5)
+      const nextWidth = Math.min(maxWidth, Math.max(minWidth, event.clientX - bounds.left))
+      onSidebarWidthChange(nextWidth)
+    }
+
+    const stopResize = () => {
+      setIsResizing(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', stopResize)
+    window.addEventListener('pointercancel', stopResize)
+
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', stopResize)
+      window.removeEventListener('pointercancel', stopResize)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+  }, [isResizing, onSidebarWidthChange])
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const text = message.trim()
+    if (!text) return
+    setMessage('')
+    await onSendMessage(text)
+  }
+
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      event.currentTarget.form?.requestSubmit()
+    }
+  }
+
+  return (
+    <section
+      ref={shellRef}
+      className={`chat-shell session-shell${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}
+      style={
+        sidebarCollapsed
+          ? undefined
+          : ({ '--session-sidebar-width': `${sidebarWidth}px` } as CSSProperties)
+      }
+    >
+      <aside
+        className={`chat-sidebar session-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}
+      >
+        <div className="session-sidebar-toolbar">
+          <button className="button secondary back-button" type="button" onClick={onBack}>
+            Back
+          </button>
+        </div>
+
+        <div className="session-sidebar-rail">
+          <div className="session-rail-head">
+            <span className={`status-dot status-dot-${sessionTone}`} aria-hidden="true"></span>
+          </div>
+          {collapsedCards.map(card => (
+            <button
+              key={card.key}
+              className="session-rail-card"
+              type="button"
+              onClick={onToggleSidebar}
+              aria-label={`Expand sidebar to view ${card.label}`}
+              data-tooltip={`${card.label}\n${card.summary}\n${card.detail}`}
+            >
+              <span className="session-rail-icon">{card.icon}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="sidebar-block session-summary-block">
+          <div className="session-summary-head">
+            <div>
+              <p className="label">Session</p>
+              <h2 className="session-title">{title}</h2>
+            </div>
+            <span className={`status-dot status-dot-${sessionTone}`} aria-hidden="true"></span>
+          </div>
+          <div className="session-summary-meta">
+            <span className="session-summary-id">{truncateText(session?.id || sessionId, 24)}</span>
+            <span className="session-summary-status">{statusText}</span>
+          </div>
+          <p className="muted session-subtitle">
+            {session ? `${session.environmentId} · active remote transcript` : 'Loading session details'}
+          </p>
+        </div>
+
+        <section className="sidebar-card overview-card">
+          <div className="card-head card-head-tight">
+            <div>
+              <p className="label">Overview</p>
+              <h3>Session state</h3>
+            </div>
+            <span className="muted sidebar-count">Live</span>
+          </div>
+          <div className="state-list">
+            <SessionStateRow
+              label="Environment"
+              value={session?.environmentId || '—'}
+              truncate={32}
+            />
+            <SessionStateRow
+              label="Connection"
+              value={`${streamStatus} · ${statusText}`}
+            />
+            <SessionStateRow
+              label="Last activity"
+              value={session?.lastActivityAt ? formatTime(session.lastActivityAt) : '—'}
+            />
+            <SessionStateRow
+              label="Last event"
+              value={latestEvent ? eventSummary(latestEvent) : '—'}
+              truncate={120}
+            />
+          </div>
+        </section>
+
+        <section className="sidebar-card timeline-card">
+          <div className="card-head">
+            <div>
+              <p className="label">Timeline</p>
+              <h3>Recent activity</h3>
+            </div>
+            <span className="muted sidebar-count">{timelineEvents.length} events</span>
+          </div>
+          <div className="activity-list">
+            {timelineEvents.length ? (
+              timelineEvents.map(event => (
+                <div className="timeline-item" key={eventKey(event)}>
+                  <div className="activity-head">
+                    <strong>{event.type || 'event'}</strong>
+                    <small>#{event.seq ?? '—'}</small>
+                  </div>
+                  <div className="timeline-body">{eventSummary(event)}</div>
+                  <small>{formatTime(event.createdAt)}</small>
+                </div>
+              ))
+            ) : (
+              <div className="empty-state">Activity will appear here as events arrive.</div>
+            )}
+          </div>
+        </section>
+
+        <section className="sidebar-card metadata-card">
+          <div className="card-head">
+            <div>
+              <p className="label">Metadata</p>
+              <h3>Session JSON</h3>
+            </div>
+            <span className="muted sidebar-count">Inspector</span>
+          </div>
+          <JsonCodeBlock value={session || {}} collapsedLines={11} />
+        </section>
+      </aside>
+
+      <button
+        className={`sidebar-fab-toggle${sidebarCollapsed ? ' is-collapsed' : ''}`}
+        type="button"
+        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        onClick={onToggleSidebar}
+      >
+        <span className="sidebar-fab-icon" aria-hidden="true">
+          {sidebarCollapsed ? '›' : '‹'}
+        </span>
+      </button>
+
+      {!sidebarCollapsed ? (
+        <button
+          className={`sidebar-resizer${isResizing ? ' is-active' : ''}`}
+          type="button"
+          aria-label="Resize sidebar"
+          onPointerDown={event => {
+            event.preventDefault()
+            setIsResizing(true)
+          }}
+        />
+      ) : null}
+
+      <section className="chat-stage transcript-stage">
+        <div className="chat-stage-head">
+          <div>
+            <p className="label">Live transcript</p>
+            <h2>Conversation</h2>
+          </div>
+          <span className="muted seq-label">seq {session?.lastEventSeq ?? '—'}</span>
+        </div>
+
+        <div className="chat-scroll">
+          <div className="message-stream chat-messages">
+            {visibleMessages.length ? (
+              visibleMessages.map(event => {
+                const kind = event.type || 'system'
+                const roleLabel = kind === 'user' ? 'You' : 'Assistant'
+
+                return (
+                  <article className={`message ${kind} bubble-row`} key={eventKey(event)}>
+                    <div className="message-head">
+                      <strong>{roleLabel}</strong>
+                    </div>
+                    <div className="message-body">{formatEventBody(event)}</div>
+                    <div className="message-meta">
+                      <span>#{event.seq ?? '—'}</span>
+                      <span>{formatTime(event.createdAt)}</span>
+                    </div>
+                  </article>
+                )
+              })
+            ) : (
+              <div className="empty-state">
+                <strong>No chat messages yet.</strong>
+                <div className="hint">
+                  Send the first prompt or wait for the CLI to answer.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <form className="composer" onSubmit={submit}>
+          <label className="composer-shell" htmlFor="message-input">
+            <textarea
+              id="message-input"
+              ref={inputRef}
+              rows={1}
+              placeholder="Message the remote agent"
+              autoComplete="off"
+              spellCheck={true}
+              value={message}
+              onChange={event => setMessage(event.currentTarget.value)}
+              onKeyDown={onKeyDown}
+            />
+            <button className="button composer-send" type="submit">
+              Send
+            </button>
+          </label>
+          <div className="form-actions form-actions-inline">
+            <p className="hint">Enter sends. Shift+Enter inserts a newline.</p>
+            <span className="muted">Web to CLI via session events</span>
+          </div>
+        </form>
+      </section>
+    </section>
+  )
+}
+
+function SessionGlyph(): ReactNode {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="5" y="4" width="14" height="16" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M8 9h8M8 13h8M8 17h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+    </svg>
+  )
+}
+
+function TimelineGlyph(): ReactNode {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 8v4l3 2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+    </svg>
+  )
+}
+
+function CodeGlyph(): ReactNode {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 8 5 12l4 4M15 8l4 4-4 4M13 6l-2 12" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+    </svg>
+  )
+}
