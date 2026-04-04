@@ -27,6 +27,7 @@ export type EnvironmentRecord = {
   directory: string
   branch: string
   workerType: string
+  spawnMode: 'single-session' | 'worktree' | 'same-dir'
   lastSeenAt: string
   status: EnvironmentStatus
   activeSessionId: string | null
@@ -86,7 +87,10 @@ export type BridgeEnvironmentRegisterRequest = {
   machine_name?: string
   directory?: string
   branch?: string
-  metadata?: { worker_type?: string }
+  metadata?: {
+    worker_type?: string
+    spawn_mode?: EnvironmentRecord['spawnMode']
+  }
 }
 
 export type CreateSessionRequest = {

@@ -27,6 +27,9 @@ export async function registerEnvironment(
   const directory = safeString(body.directory, process.cwd())
   const branch = safeString(body.branch, 'main')
   const workerType = safeString(body.metadata?.worker_type, 'remote-control')
+  const spawnMode = body.metadata?.spawn_mode === 'worktree' || body.metadata?.spawn_mode === 'same-dir'
+    ? body.metadata.spawn_mode
+    : 'single-session'
 
   const payload = await context.store.mutate(draft => {
     const existing = draft.environments.find(item => item.id === environmentId)
@@ -37,6 +40,7 @@ export async function registerEnvironment(
           directory,
           branch,
           workerType,
+          spawnMode,
           lastSeenAt: now(),
           status: existing.status === 'expired' ? 'registered' : existing.status,
         }
@@ -47,6 +51,7 @@ export async function registerEnvironment(
           directory,
           branch,
           workerType,
+          spawnMode,
           lastSeenAt: now(),
           status: 'registered',
           activeSessionId: null,
@@ -66,6 +71,7 @@ export async function registerEnvironment(
     directory: payload.directory,
     branch: payload.branch,
     workerType: payload.workerType,
+    spawnMode: payload.spawnMode,
   })
 
   return json({

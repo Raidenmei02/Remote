@@ -27,6 +27,7 @@ export type WsData = {
 export type Route =
   | { kind: 'register_environment' }
   | { kind: 'environments_root' }
+  | { kind: 'delete_bridge_environment'; environmentId: string }
   | { kind: 'get_environment'; environmentId: string }
   | { kind: 'poll_work'; environmentId: string }
   | { kind: 'ack_work'; environmentId: string; workId: string }
@@ -35,6 +36,7 @@ export type Route =
   | { kind: 'reconnect_session'; environmentId: string }
   | { kind: 'sessions_root' }
   | { kind: 'get_session'; sessionId: string }
+  | { kind: 'archive_session'; sessionId: string }
   | { kind: 'get_session_events'; sessionId: string }
   | { kind: 'post_session_events'; sessionId: string }
   | { kind: 'post_session_ingress_events'; sessionId: string }

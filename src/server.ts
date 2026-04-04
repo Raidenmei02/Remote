@@ -14,6 +14,7 @@ import {
   registerEnvironment,
 } from './backend/handlers/environments'
 import {
+  archiveSession,
   createSession,
   getSession,
   listSessions,
@@ -137,6 +138,9 @@ const server = Bun.serve({
             ? await registerEnvironment(context, request)
             : await listEnvironments(context)
           break
+        case 'delete_bridge_environment':
+          response = await deleteEnvironment(context, request, route.environmentId)
+          break
         case 'get_environment':
           response = request.method === 'DELETE'
             ? await deleteEnvironment(context, request, route.environmentId)
@@ -164,6 +168,9 @@ const server = Bun.serve({
           break
         case 'get_session':
           response = await getSession(context, route.sessionId)
+          break
+        case 'archive_session':
+          response = await archiveSession(context, request, route.sessionId)
           break
         case 'get_session_events':
           response = await listSessionEvents(context, route.sessionId)

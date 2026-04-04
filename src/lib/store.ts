@@ -135,15 +135,29 @@ export class JsonStore {
   }
 
   private async flush(): Promise<void> {
+    const persistedEnvironmentIds = new Set(
+      this.data.environments
+        .filter(environment => environment.spawnMode !== 'single-session')
+        .map(environment => environment.id),
+    )
+    const persistedSessionIds = new Set(
+      this.data.sessions
+        .filter(session => persistedEnvironmentIds.has(session.environmentId))
+        .map(session => session.id),
+    )
     const environments: EnvironmentDatabaseShape = {
-      environments: this.data.environments,
+      environments: this.data.environments.filter(environment => persistedEnvironmentIds.has(environment.id)),
     }
     const sessions: SessionDatabaseShape = {
-      sessions: this.data.sessions,
+      sessions: this.data.sessions.filter(session => persistedSessionIds.has(session.id)),
     }
     const runtime: RuntimeDatabaseShape = {
-      workItems: this.data.workItems,
-      sessionEvents: this.data.sessionEvents,
+      workItems: this.data.workItems.filter(
+        workItem =>
+          persistedEnvironmentIds.has(workItem.environmentId) &&
+          persistedSessionIds.has(workItem.sessionId),
+      ),
+      sessionEvents: this.data.sessionEvents.filter(event => persistedSessionIds.has(event.sessionId)),
     }
 
     await Promise.all([

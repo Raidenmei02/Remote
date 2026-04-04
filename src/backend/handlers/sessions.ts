@@ -121,3 +121,71 @@ export async function getSession(context: AppContext, sessionId: string): Promis
     workItems,
   })
 }
+
+export async function archiveSession(
+  context: AppContext,
+  request: Request,
+  sessionId: string,
+): Promise<Response> {
+  if (!requireAdminAccess(request, context.config.adminToken)) {
+    return json({ error: 'Unauthorized' }, 401)
+  }
+
+  const existingSession = context.store.findSession(sessionId)
+  if (!existingSession) {
+    return json({ error: 'Session not found' }, 404)
+  }
+
+  const hasActiveWork = context.store.snapshot.workItems.some(
+    item => item.sessionId === sessionId && item.state !== 'completed',
+  )
+  const isAlreadyArchived =
+    existingSession.status === 'completed' &&
+    !hasActiveWork &&
+    (context.store.findEnvironment(existingSession.environmentId)?.activeSessionId ?? null) !== sessionId
+
+  if (isAlreadyArchived) {
+    return json({ error: 'Session already archived' }, 409)
+  }
+
+  const result = await context.store.mutate(draft => {
+    const session = draft.sessions.find(item => item.id === sessionId)
+    if (!session) return null
+
+    const environment = draft.environments.find(item => item.id === session.environmentId) ?? null
+    const workItems = draft.workItems.filter(item => item.sessionId === session.id)
+
+    session.status = 'completed'
+    session.lastActivityAt = now()
+
+    for (const workItem of workItems) {
+      workItem.state = 'completed'
+      workItem.leaseUntil = now()
+    }
+
+    if (environment?.activeSessionId === session.id) {
+      environment.activeSessionId = null
+      environment.status = 'registered'
+      environment.lastSeenAt = now()
+    }
+
+    return {
+      id: session.id,
+      archived: true,
+      environment_id: session.environmentId,
+      completed_work_items: workItems.length,
+    }
+  })
+
+  if (!result) {
+    return json({ error: 'Session not found' }, 404)
+  }
+
+  context.debug.log('session', 'archived', {
+    sessionId: result.id,
+    environmentId: result.environment_id,
+    completedWorkItems: result.completed_work_items,
+  })
+
+  return json(result)
+}

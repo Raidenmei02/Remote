@@ -12,6 +12,12 @@ export function parseRoute(pathname: string): Route | null {
     if (segments.length === 3 && segments[2] === 'bridge') {
       return { kind: 'register_environment' }
     }
+    if (segments.length === 4 && segments[2] === 'bridge') {
+      return {
+        kind: 'delete_bridge_environment',
+        environmentId: assertSafeId(segments[3], 'environmentId'),
+      }
+    }
     if (segments.length === 3) {
       return {
         kind: 'get_environment',
@@ -48,6 +54,12 @@ export function parseRoute(pathname: string): Route | null {
   if (segments[0] === 'v1' && segments[1] === 'sessions') {
     if (segments.length === 2) {
       return { kind: 'sessions_root' }
+    }
+    if (segments.length === 4 && segments[3] === 'archive') {
+      return {
+        kind: 'archive_session',
+        sessionId: assertSafeId(segments[2], 'sessionId'),
+      }
     }
     if (segments.length === 3) {
       return {
