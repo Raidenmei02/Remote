@@ -9,6 +9,20 @@ type RequestOptions = {
   body?: unknown
 }
 
+function generateEventUuid() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return `web_${globalThis.crypto.randomUUID().replaceAll('-', '')}`
+  }
+
+  if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16)
+    globalThis.crypto.getRandomValues(bytes)
+    return `web_${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`
+  }
+
+  return `web_${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
+}
+
 export function requestJson<T>(
   path: string,
   baseUrl: string,
@@ -123,7 +137,7 @@ export function sendUserMessage(baseUrl: string, sessionId: string, text: string
         events: [
           {
             type: 'user',
-            uuid: `web_${crypto.randomUUID().replaceAll('-', '')}`,
+            uuid: generateEventUuid(),
             message: { content: text },
             source: 'web',
           },
