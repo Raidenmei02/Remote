@@ -13,6 +13,7 @@ type OverviewPageProps = {
   onSelectEnvironment: (environmentId: string) => void
   onOpenSession: (sessionId: string) => void
   onCreateSession: (environmentId: string, title: string) => Promise<void>
+  onRemoveEnvironment: (environmentId: string) => Promise<void>
   onRemoveSession: (sessionId: string) => Promise<void>
 }
 
@@ -25,6 +26,7 @@ export function OverviewPage({
   onSelectEnvironment,
   onOpenSession,
   onCreateSession,
+  onRemoveEnvironment,
   onRemoveSession,
 }: OverviewPageProps) {
   const hasEnvironments = environments.length > 0
@@ -203,6 +205,7 @@ export function OverviewPage({
                 environment={featuredEnvironment}
                 onOpenSession={onOpenSession}
                 onCreateSession={onCreateSession}
+                onRemoveEnvironment={onRemoveEnvironment}
               />
             ) : null}
           </div>

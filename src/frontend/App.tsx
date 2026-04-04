@@ -2,6 +2,7 @@ import { startTransition, useEffect, useEffectEvent, useState } from 'react'
 import type { EnvironmentRecord, SessionEventRecord } from '../shared/protocol'
 import {
   createSession,
+  deleteEnvironment,
   fetchOverview,
   fetchSessionDetail,
   sendUserMessage,
@@ -155,6 +156,16 @@ export function App() {
     refresh()
   }
 
+  const handleRemoveEnvironment = async (environmentId: string) => {
+    await deleteEnvironment(baseUrl, environmentId)
+    setEnvironments(current => current.filter(item => item.id !== environmentId))
+    setSessions(current => current.filter(item => item.environmentId !== environmentId))
+    setSelectedEnvironmentId(currentId =>
+      currentId === environmentId ? null : currentId,
+    )
+    refresh()
+  }
+
   const handleSendMessage = async (text: string) => {
     if (!selectedSessionId) return
     await sendUserMessage(baseUrl, selectedSessionId, text)
@@ -194,6 +205,7 @@ export function App() {
             onSelectEnvironment={setSelectedEnvironmentId}
             onOpenSession={openSession}
             onCreateSession={handleCreateSession}
+            onRemoveEnvironment={handleRemoveEnvironment}
             onRemoveSession={handleRemoveSession}
           />
         ) : (

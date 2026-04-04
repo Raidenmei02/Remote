@@ -8,6 +8,7 @@ import { SessionHub } from './backend/sessionHub'
 import { parseRoute } from './backend/routes'
 import { json, now } from './backend/http'
 import {
+  deleteEnvironment,
   getEnvironment,
   listEnvironments,
   registerEnvironment,
@@ -137,7 +138,9 @@ const server = Bun.serve({
             : await listEnvironments(context)
           break
         case 'get_environment':
-          response = await getEnvironment(context, route.environmentId)
+          response = request.method === 'DELETE'
+            ? await deleteEnvironment(context, request, route.environmentId)
+            : await getEnvironment(context, route.environmentId)
           break
         case 'poll_work':
           response = await pollWork(context, request, route.environmentId)

@@ -6,15 +6,18 @@ type EnvironmentCardProps = {
   environment: EnvironmentRecord
   onOpenSession: (sessionId: string) => void
   onCreateSession: (environmentId: string, title: string) => Promise<void>
+  onRemoveEnvironment: (environmentId: string) => Promise<void>
 }
 
 export function EnvironmentCard({
   environment,
   onOpenSession,
   onCreateSession,
+  onRemoveEnvironment,
 }: EnvironmentCardProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement | null>(null)
   const hasActiveSession = Boolean(environment.activeSessionId)
@@ -33,6 +36,26 @@ export function EnvironmentCard({
       setError(submitError instanceof Error ? submitError.message : 'Failed to start session')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const remove = async () => {
+    if (submitting || deleting) return
+
+    const confirmed = globalThis.confirm(
+      `Delete environment "${environment.id}" and all related sessions, work items, and events?`,
+    )
+    if (!confirmed) return
+
+    setDeleting(true)
+    setError('')
+
+    try {
+      await onRemoveEnvironment(environment.id)
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : 'Failed to delete environment')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -83,6 +106,7 @@ export function EnvironmentCard({
         <button
           className="button secondary create-session"
           type="button"
+          disabled={deleting}
           onClick={() => {
             if (!hasActiveSession) {
               inputRef.current?.focus()
@@ -90,6 +114,14 @@ export function EnvironmentCard({
           }}
         >
           {hasActiveSession ? 'Attached' : 'New draft'}
+        </button>
+        <button
+          className="button danger delete-environment"
+          type="button"
+          disabled={submitting || deleting}
+          onClick={() => void remove()}
+        >
+          {deleting ? 'Deleting…' : 'Delete environment'}
         </button>
       </div>
 
@@ -101,10 +133,14 @@ export function EnvironmentCard({
           placeholder="Session title"
           autoComplete="off"
           value={title}
-          disabled={hasActiveSession || submitting}
+          disabled={hasActiveSession || submitting || deleting}
           onChange={event => setTitle(event.currentTarget.value)}
         />
-        <button className="button" type="submit" disabled={hasActiveSession || submitting}>
+        <button
+          className="button"
+          type="submit"
+          disabled={hasActiveSession || submitting || deleting}
+        >
           {submitting ? 'Starting…' : 'Start'}
         </button>
       </form>

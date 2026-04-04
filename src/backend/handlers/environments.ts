@@ -100,3 +100,69 @@ export async function getEnvironment(
     activeSession: session,
   })
 }
+
+export async function deleteEnvironment(
+  context: AppContext,
+  request: Request,
+  environmentId: string,
+): Promise<Response> {
+  if (!requireAdminAccess(request, context.config.adminToken)) {
+    return json({ error: 'Unauthorized' }, 401)
+  }
+
+  let removed:
+    | {
+        environmentId: string
+        removedSessions: number
+        removedWorkItems: number
+        removedEvents: number
+      }
+    | null = null
+
+  try {
+    removed = await context.store.mutate(draft => {
+      const environment = draft.environments.find(item => item.id === environmentId)
+      if (!environment) {
+        throw new Error('Environment not found')
+      }
+
+      const sessionIds = new Set(
+        draft.sessions
+          .filter(item => item.environmentId === environmentId)
+          .map(item => item.id),
+      )
+      const removedSessions = sessionIds.size
+      const removedWorkItems = draft.workItems.filter(item => item.environmentId === environmentId).length
+      const removedEvents = draft.sessionEvents.filter(item => sessionIds.has(item.sessionId)).length
+
+      draft.environments = draft.environments.filter(item => item.id !== environmentId)
+      draft.sessions = draft.sessions.filter(item => item.environmentId !== environmentId)
+      draft.workItems = draft.workItems.filter(item => item.environmentId !== environmentId)
+      draft.sessionEvents = draft.sessionEvents.filter(item => !sessionIds.has(item.sessionId))
+
+      return {
+        environmentId,
+        removedSessions,
+        removedWorkItems,
+        removedEvents,
+      }
+    })
+  } catch (error) {
+    return json(
+      {
+        error: error instanceof Error ? error.message : 'Environment deletion failed',
+      },
+      error instanceof Error && error.message === 'Environment not found' ? 404 : 409,
+    )
+  }
+
+  context.debug.log('environment', 'deleted', removed)
+
+  return json({
+    deleted: true,
+    environment_id: removed.environmentId,
+    removed_sessions: removed.removedSessions,
+    removed_work_items: removed.removedWorkItems,
+    removed_events: removed.removedEvents,
+  })
+}

@@ -102,6 +102,18 @@ export function createSession(
   })
 }
 
+export function deleteEnvironment(baseUrl: string, environmentId: string) {
+  return requestJson<{
+    deleted: boolean
+    environment_id: string
+    removed_sessions: number
+    removed_work_items: number
+    removed_events: number
+  }>(`/v1/environments/${encodeURIComponent(environmentId)}`, baseUrl, {
+    method: 'DELETE',
+  })
+}
+
 export async function stopOrHideSession(baseUrl: string, sessionId: string) {
   const detail = await requestJson<SessionDetail>(
     `/v1/sessions/${encodeURIComponent(sessionId)}`,
