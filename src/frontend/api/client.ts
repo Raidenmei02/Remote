@@ -138,7 +138,12 @@ export function sendUserMessage(baseUrl: string, sessionId: string, text: string
           {
             type: 'user',
             uuid: generateEventUuid(),
-            message: { content: text },
+            session_id: sessionId,
+            parent_tool_use_id: null,
+            message: {
+              role: 'user',
+              content: text,
+            },
             source: 'web',
           },
         ],

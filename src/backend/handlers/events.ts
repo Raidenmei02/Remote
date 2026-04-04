@@ -5,6 +5,8 @@ import { buildEventRecord, canonicalizeIncomingEvent } from '../domain'
 import { json, now, readJsonBody, sseHeaders } from '../http'
 import type { IncomingEventPayload, SseClient } from '../types'
 
+const SSE_HEARTBEAT_MS = 15000
+
 export async function appendSessionEvents(
   context: AppContext,
   request: Request,
@@ -130,20 +132,49 @@ export async function streamSessionEvents(
     workItems,
     events: context.store.listSessionEvents(sessionId),
   }
+  let heartbeat: ReturnType<typeof setInterval> | null = null
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const client: SseClient = { controller, sessionId }
+      heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(new TextEncoder().encode(': ping\n\n'))
+        } catch {
+          if (heartbeat) {
+            clearInterval(heartbeat)
+            heartbeat = null
+          }
+          context.hub.unsubscribeSse(sessionId, client)
+          context.sseClientBySession.delete(sessionId)
+        }
+      }, SSE_HEARTBEAT_MS)
+
       context.sseClientBySession.set(sessionId, client)
       context.hub.subscribeSse(sessionId, client)
       context.hub.sendSnapshot(sessionId, snapshot, afterSeq)
+      request.signal.addEventListener(
+        'abort',
+        () => {
+          if (heartbeat) {
+            clearInterval(heartbeat)
+            heartbeat = null
+          }
+          context.hub.unsubscribeSse(sessionId, client)
+          context.sseClientBySession.delete(sessionId)
+        },
+        { once: true },
+      )
     },
     cancel() {
-      const client = context.sseClientBySession.get(sessionId)
-      if (client) {
-        context.hub.unsubscribeSse(sessionId, client)
-        context.sseClientBySession.delete(sessionId)
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = null
       }
+      const client = context.sseClientBySession.get(sessionId)
+      if (!client) return
+      context.hub.unsubscribeSse(sessionId, client)
+      context.sseClientBySession.delete(sessionId)
     },
   })
 
