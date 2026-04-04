@@ -1063,6 +1063,14 @@ textarea:focus {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.012));
 }
 
+.timeline-item[data-tone="good"] {
+  border-color: rgba(74, 222, 128, 0.2);
+}
+
+.timeline-item[data-tone="bad"] {
+  border-color: rgba(251, 113, 133, 0.24);
+}
+
 .timeline-body {
   white-space: pre-wrap;
   line-height: 1.55;
@@ -1119,6 +1127,114 @@ textarea:focus {
   white-space: pre-wrap;
   line-height: 1.65;
   color: #edf3fb;
+}
+
+.structured-message {
+  gap: 10px;
+}
+
+.message.result {
+  justify-self: stretch;
+  max-width: min(86%, 820px);
+  border-color: rgba(245, 158, 11, 0.26);
+  background: linear-gradient(180deg, rgba(44, 37, 22, 0.92), rgba(26, 22, 14, 0.96));
+}
+
+.structured-blocks {
+  display: grid;
+  gap: 10px;
+}
+
+.structured-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(159, 184, 214, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.structured-card[data-tone="good"],
+.tool-result-card[data-tone="good"] {
+  border-color: rgba(74, 222, 128, 0.22);
+  background: rgba(34, 66, 46, 0.16);
+}
+
+.structured-card[data-tone="bad"],
+.tool-result-card[data-tone="bad"] {
+  border-color: rgba(251, 113, 133, 0.24);
+  background: rgba(84, 22, 32, 0.18);
+}
+
+.structured-card-head,
+.activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.structured-card-label {
+  color: rgba(150, 168, 192, 0.8);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.tool-command-preview,
+.tool-result-summary,
+.tool-output-block {
+  font-family: var(--mono);
+}
+
+.tool-command-preview {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(8, 11, 15, 0.78);
+  color: #f7c66a;
+  overflow-wrap: anywhere;
+}
+
+.tool-result-summary {
+  color: #dbe8f8;
+  font-size: 0.84rem;
+}
+
+.tool-output-block {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(159, 184, 214, 0.1);
+  background: rgba(8, 11, 15, 0.82);
+  color: #d9e8fb;
+  line-height: 1.62;
+  font-size: 0.82rem;
+}
+
+.tool-output-block.is-expanded {
+  max-height: 420px;
+}
+
+.tool-flags,
+.result-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tool-flags span,
+.result-stats span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .message-meta {

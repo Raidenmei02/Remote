@@ -10,15 +10,19 @@ import {
 import type { SessionEventRecord } from '../../shared/protocol'
 import { JsonCodeBlock } from '../components/JsonCodeBlock'
 import { SessionStateRow } from '../components/SessionStateRow'
+import { StructuredMessage } from '../components/StructuredMessage'
 import type { SessionDetail } from '../types'
 import {
   autoResizeTextarea,
   formatTime,
   toneForSession,
-  toneForStream,
   truncateText,
 } from '../utils/format'
-import { eventKey, eventSummary, formatEventBody } from '../utils/session'
+import {
+  eventKey,
+  structureSessionEvents,
+  summarizeStructuredEntry,
+} from '../utils/session'
 
 type SessionPageProps = {
   session: SessionDetail | null
@@ -49,9 +53,16 @@ export function SessionPage({
   const [isResizing, setIsResizing] = useState(false)
   const shellRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
-  const timelineEvents = [...events].reverse()
-  const visibleMessages = events.filter(
-    event => event.type === 'user' || event.type === 'assistant',
+  const structuredEntries = structureSessionEvents(events)
+  const timelineEvents = structuredEntries.map(summarizeStructuredEntry).reverse()
+  const visibleMessages = structuredEntries.filter(entry =>
+    entry.blocks.some(
+      block =>
+        block.kind === 'text' ||
+        block.kind === 'tool_use' ||
+        block.kind === 'tool_result' ||
+        block.kind === 'result',
+    ),
   )
   const latestEvent = events.at(-1)
   const title = session?.title || sessionId
@@ -212,7 +223,7 @@ export function SessionPage({
             />
             <SessionStateRow
               label="Last event"
-              value={latestEvent ? eventSummary(latestEvent) : '—'}
+              value={latestEvent ? `${latestEvent.type} #${latestEvent.seq ?? '—'}` : '—'}
               truncate={120}
             />
           </div>
@@ -229,12 +240,16 @@ export function SessionPage({
           <div className="activity-list">
             {timelineEvents.length ? (
               timelineEvents.map(event => (
-                <div className="timeline-item" key={eventKey(event)}>
+                <div
+                  className="timeline-item"
+                  data-tone={event.tone || 'warn'}
+                  key={event.id}
+                >
                   <div className="activity-head">
-                    <strong>{event.type || 'event'}</strong>
+                    <strong>{event.title}</strong>
                     <small>#{event.seq ?? '—'}</small>
                   </div>
-                  <div className="timeline-body">{eventSummary(event)}</div>
+                  <div className="timeline-body">{event.summary}</div>
                   <small>{formatTime(event.createdAt)}</small>
                 </div>
               ))
@@ -291,23 +306,9 @@ export function SessionPage({
         <div className="chat-scroll">
           <div className="message-stream chat-messages">
             {visibleMessages.length ? (
-              visibleMessages.map(event => {
-                const kind = event.type || 'system'
-                const roleLabel = kind === 'user' ? 'You' : 'Assistant'
-
-                return (
-                  <article className={`message ${kind} bubble-row`} key={eventKey(event)}>
-                    <div className="message-head">
-                      <strong>{roleLabel}</strong>
-                    </div>
-                    <div className="message-body">{formatEventBody(event)}</div>
-                    <div className="message-meta">
-                      <span>#{event.seq ?? '—'}</span>
-                      <span>{formatTime(event.createdAt)}</span>
-                    </div>
-                  </article>
-                )
-              })
+              visibleMessages.map(entry => (
+                <StructuredMessage entry={entry} key={eventKey(entry.rawEvent)} />
+              ))
             ) : (
               <div className="empty-state">
                 <strong>No chat messages yet.</strong>

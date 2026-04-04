@@ -1,5 +1,10 @@
 import type { EnvironmentRecord, SessionEventRecord } from '../../shared/protocol'
-import type { EventListResponse } from '../types'
+import type {
+  EventListResponse,
+  StructuredMessageBlock,
+  StructuredSessionEntry,
+  TimelineItemViewModel,
+} from '../types'
 import { tryParse } from './json'
 
 export function pickSelectedEnvironmentId(
@@ -70,6 +75,228 @@ export function formatEventBody(event: SessionEventRecord) {
 
 export function eventSummary(event: SessionEventRecord) {
   return formatEventBody(event) || `${event.direction || 'event'} ${event.uuid || ''}`.trim()
+}
+
+export function structureSessionEvents(
+  events: SessionEventRecord[],
+): StructuredSessionEntry[] {
+  return events.map(event => {
+    const blocks = parseStructuredBlocks(event)
+
+    return {
+      id: event.id,
+      seq: event.seq ?? 0,
+      role: normalizeStructuredRole(event.type),
+      createdAt: event.createdAt,
+      blocks,
+      rawEvent: event,
+    }
+  })
+}
+
+export function summarizeStructuredEntry(
+  entry: StructuredSessionEntry,
+): TimelineItemViewModel {
+  const firstBlock = entry.blocks[0]
+  if (!firstBlock) {
+    return {
+      id: entry.id,
+      seq: entry.seq,
+      title: entry.role,
+      summary: 'No details',
+      createdAt: entry.createdAt,
+      tone: 'warn',
+    }
+  }
+
+  switch (firstBlock.kind) {
+    case 'tool_use':
+      return {
+        id: entry.id,
+        seq: entry.seq,
+        title: firstBlock.toolName || 'Tool',
+        summary:
+          typeof firstBlock.input.command === 'string'
+            ? String(firstBlock.input.command)
+            : 'Tool invoked',
+        createdAt: entry.createdAt,
+      }
+    case 'tool_result':
+      return {
+        id: entry.id,
+        seq: entry.seq,
+        title: 'Tool result',
+        summary: firstBlock.isError ? 'Command failed' : 'Command completed',
+        createdAt: entry.createdAt,
+        tone: firstBlock.isError ? 'bad' : 'good',
+      }
+    case 'result':
+      return {
+        id: entry.id,
+        seq: entry.seq,
+        title: 'Turn completed',
+        summary: firstBlock.subtype || 'result',
+        createdAt: entry.createdAt,
+        tone: firstBlock.subtype === 'success' ? 'good' : 'bad',
+      }
+    case 'status':
+      return {
+        id: entry.id,
+        seq: entry.seq,
+        title: firstBlock.label,
+        summary: firstBlock.value,
+        createdAt: entry.createdAt,
+      }
+    case 'text':
+      return {
+        id: entry.id,
+        seq: entry.seq,
+        title: entry.role === 'user' ? 'You' : 'Assistant',
+        summary: firstBlock.text,
+        createdAt: entry.createdAt,
+      }
+    case 'json':
+      return {
+        id: entry.id,
+        seq: entry.seq,
+        title: firstBlock.label,
+        summary: 'Structured fallback',
+        createdAt: entry.createdAt,
+        tone: 'warn',
+      }
+  }
+}
+
+function parseStructuredBlocks(event: SessionEventRecord): StructuredMessageBlock[] {
+  const payload = event.payload as Record<string, unknown>
+  const blocks: StructuredMessageBlock[] = []
+
+  if (event.type === 'result') {
+    blocks.push({
+      kind: 'result',
+      subtype: stringValue(payload.subtype),
+      text: stringValue(payload.result),
+      durationMs: numberValue(payload.duration_ms),
+      durationApiMs: numberValue(payload.duration_api_ms),
+      costUsd: numberValue(payload.total_cost_usd),
+      stopReason: stringValue(payload.stop_reason),
+      usage: objectValue(payload.usage) ?? undefined,
+    })
+    return blocks
+  }
+
+  if (event.type === 'system') {
+    const summary = extractDisplayText(payload)
+    if (summary) {
+      blocks.push({
+        kind: 'status',
+        label: 'System event',
+        value: summary,
+      })
+    } else {
+      blocks.push({
+        kind: 'json',
+        label: 'System event',
+        value: payload,
+      })
+    }
+    return blocks
+  }
+
+  const message = objectValue(payload.message)
+  const content = Array.isArray(message?.content)
+    ? message.content
+    : typeof message?.content === 'string'
+      ? [{ type: 'text', text: message.content }]
+      : []
+
+  if (!content.length && typeof payload.text === 'string') {
+    blocks.push({
+      kind: 'text',
+      text: payload.text,
+    })
+  }
+
+  for (const item of content) {
+    if (!item || typeof item !== 'object') continue
+    const block = item as Record<string, unknown>
+    const blockType = stringValue(block.type)
+
+    if (blockType === 'text') {
+      const text = stringValue(block.text) || extractDisplayText(block)
+      if (text) {
+        blocks.push({ kind: 'text', text })
+      }
+      continue
+    }
+
+    if (blockType === 'tool_use') {
+      blocks.push({
+        kind: 'tool_use',
+        toolCallId: stringValue(block.id),
+        toolName: stringValue(block.name),
+        input: objectValue(block.input) ?? {},
+      })
+      continue
+    }
+
+    if (blockType === 'tool_result') {
+      const result = objectValue(payload.tool_use_result) ?? {}
+      blocks.push({
+        kind: 'tool_result',
+        toolUseId: stringValue(block.tool_use_id),
+        content: stringValue(block.content),
+        stdout: stringValue(result.stdout),
+        stderr: stringValue(result.stderr),
+        isError: booleanValue(block.is_error),
+        interrupted: booleanValue(result.interrupted),
+        isImage: booleanValue(result.isImage),
+      })
+      continue
+    }
+
+    blocks.push({
+      kind: 'json',
+      label: `Unsupported block: ${blockType || 'unknown'}`,
+      value: block,
+    })
+  }
+
+  if (!blocks.length) {
+    const fallbackText = extractDisplayText(payload)
+    blocks.push(
+      fallbackText
+        ? { kind: 'text', text: fallbackText }
+        : { kind: 'json', label: `${event.type || 'event'} payload`, value: payload },
+    )
+  }
+
+  return blocks
+}
+
+function normalizeStructuredRole(type: string): StructuredSessionEntry['role'] {
+  if (type === 'user' || type === 'assistant' || type === 'system' || type === 'result') {
+    return type
+  }
+  return 'system'
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function booleanValue(value: unknown): boolean {
+  return value === true
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }
 
 function extractDisplayText(value: unknown): string {
