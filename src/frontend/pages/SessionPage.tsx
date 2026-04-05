@@ -20,6 +20,7 @@ import {
 } from '../utils/format'
 import {
   eventKey,
+  groupStructuredEntries,
   structureSessionEvents,
   summarizeStructuredEntry,
 } from '../utils/session'
@@ -55,7 +56,7 @@ export function SessionPage({
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const structuredEntries = structureSessionEvents(events)
   const timelineEvents = structuredEntries.map(summarizeStructuredEntry).reverse()
-  const visibleMessages = structuredEntries.filter(entry =>
+  const visibleEntries = structuredEntries.filter(entry =>
     entry.blocks.some(
       block =>
         block.kind === 'text' ||
@@ -64,6 +65,7 @@ export function SessionPage({
         block.kind === 'result',
     ),
   )
+  const visibleMessages = groupStructuredEntries(visibleEntries)
   const latestEvent = events.at(-1)
   const title = session?.title || sessionId
   const sessionTone = toneForSession(session?.status)
@@ -306,8 +308,8 @@ export function SessionPage({
         <div className="chat-scroll">
           <div className="message-stream chat-messages">
             {visibleMessages.length ? (
-              visibleMessages.map(entry => (
-                <StructuredMessage entry={entry} key={eventKey(entry.rawEvent)} />
+              visibleMessages.map(group => (
+                <StructuredMessage group={group} key={group.id || eventKey(group.entries[0].rawEvent)} />
               ))
             ) : (
               <div className="empty-state">

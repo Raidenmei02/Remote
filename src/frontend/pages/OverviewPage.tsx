@@ -32,16 +32,71 @@ export function OverviewPage({
   const hasEnvironments = environments.length > 0
   const environmentPreviewCount = 6
   const sessionPreviewCount = 6
+  const onlineEnvironmentCount = environments.filter(env =>
+    ['registered', 'idle', 'attached'].includes(env.status),
+  ).length
+  const activeSessionCount = sessions.filter(session =>
+    session.status === 'running' || session.status === 'attached',
+  ).length
+  const readyToStart = Math.max(environments.length - activeSessionCount, 0)
   const [showAllEnvironments, setShowAllEnvironments] = useState(false)
   const [showAllSessions, setShowAllSessions] = useState(false)
+  const [heroSubmitting, setHeroSubmitting] = useState(false)
+  const [draftTitle, setDraftTitle] = useState('')
   const visibleEnvironments = showAllEnvironments
     ? environments
     : environments.slice(0, environmentPreviewCount)
-  const visibleSessions = showAllSessions
-    ? sessions
-    : sessions.slice(0, sessionPreviewCount)
   const hasHiddenEnvironments = environments.length > environmentPreviewCount
-  const hasHiddenSessions = sessions.length > sessionPreviewCount
+  const sessionGroups = [
+    {
+      key: 'active',
+      title: 'Active',
+      items: sessions.filter(session =>
+        session.status === 'running' || session.status === 'attached',
+      ),
+    },
+    {
+      key: 'queued',
+      title: 'Queued',
+      items: sessions.filter(session =>
+        session.status === 'waiting_for_cli' || session.status === 'created',
+      ),
+    },
+    {
+      key: 'recent',
+      title: 'Recent',
+      items: sessions.filter(
+        session =>
+          session.status !== 'running' &&
+          session.status !== 'attached' &&
+          session.status !== 'waiting_for_cli' &&
+          session.status !== 'created',
+      ),
+    },
+  ].filter(group => group.items.length > 0)
+  const displayedSessionGroups = sessionGroups.map(group => ({
+    ...group,
+    items: showAllSessions ? group.items : group.items.slice(0, Math.max(2, sessionPreviewCount / 2)),
+  }))
+  const hasHiddenSessions = sessionGroups.some(
+    (group, index) => group.items.length > displayedSessionGroups[index].items.length,
+  )
+
+  const handleHeroAction = async () => {
+    if (!featuredEnvironment || heroSubmitting) return
+    if (featuredEnvironment.activeSessionId) {
+      onOpenSession(featuredEnvironment.activeSessionId)
+      return
+    }
+
+    setHeroSubmitting(true)
+    try {
+      await onCreateSession(featuredEnvironment.id, draftTitle.trim())
+      setDraftTitle('')
+    } finally {
+      setHeroSubmitting(false)
+    }
+  }
 
   return (
     <section className="chat-shell overview-shell">
@@ -64,24 +119,39 @@ export function OverviewPage({
                 (!selectedEnvironmentId && Boolean(env.activeSessionId))
 
               return (
-                <button
+                <div
                   key={env.id}
                   className={`environment-list-item${active ? ' active' : ''}`}
-                  type="button"
-                  onClick={() => {
-                    onSelectEnvironment(env.id)
-                    if (env.activeSessionId) {
-                      onOpenSession(env.activeSessionId)
-                    }
-                  }}
                 >
-                  <span className="environment-list-name">
-                    {env.machineName || env.id}
-                  </span>
-                  <span className="environment-list-meta">
-                    {env.branch || 'no-branch'} · {env.status}
-                  </span>
-                </button>
+                  <button
+                    className="environment-list-main"
+                    type="button"
+                    onClick={() => {
+                      onSelectEnvironment(env.id)
+                      if (env.activeSessionId) {
+                        onOpenSession(env.activeSessionId)
+                      }
+                    }}
+                  >
+                    <span className="environment-list-name">
+                      {env.machineName || env.id}
+                    </span>
+                    <span className="environment-list-meta">
+                      {env.branch || 'no-branch'} · {env.status}
+                    </span>
+                  </button>
+                  <button
+                    className="ghost-button environment-list-delete"
+                    type="button"
+                    aria-label={`Delete environment ${env.machineName || env.id}`}
+                    onClick={event => {
+                      event.stopPropagation()
+                      void onRemoveEnvironment(env.id)
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
               )
             })
           ) : (
@@ -109,48 +179,58 @@ export function OverviewPage({
           <div className="card-head compact-head">
             <div>
               <p className="label">Sessions</p>
-              <h3>History</h3>
+              <h3>Grouped timeline</h3>
             </div>
           </div>
 
-          <div className="session-list">
+          <div className="session-groups">
             {sessions.length ? (
-              visibleSessions.map(session => {
-                const removable =
-                  session.status !== 'running' && session.status !== 'attached'
-
-                return (
-                  <div className="session-list-item" key={session.id}>
-                    <button
-                      className="session-list-main"
-                      type="button"
-                      onClick={() => onOpenSession(session.id)}
-                    >
-                      <span className="session-list-title">
-                        {session.title || session.id}
-                      </span>
-                      <span className="session-list-meta">
-                        {session.environmentId || 'no environment'} · {session.status}
-                      </span>
-                    </button>
-                    <div className="session-list-actions">
-                      <span
-                        className="mini-pill"
-                        data-tone={toneForSession(session.status)}
-                      >
-                        {session.status}
-                      </span>
-                      <button
-                        className="ghost-button"
-                        type="button"
-                        onClick={() => void onRemoveSession(session.id)}
-                      >
-                        {removable ? 'Remove' : 'Stop'}
-                      </button>
-                    </div>
+              displayedSessionGroups.map(group => (
+                <section className="session-group" key={group.key}>
+                  <div className="session-group-head">
+                    <span className="session-group-title">{group.title}</span>
+                    <span className="session-group-count">{group.items.length}</span>
                   </div>
-                )
-              })
+                  <div className="session-list">
+                    {group.items.map(session => {
+                      const removable =
+                        session.status !== 'running' && session.status !== 'attached'
+
+                      return (
+                        <div className="session-list-item" key={session.id}>
+                          <button
+                            className="session-list-main"
+                            type="button"
+                            onClick={() => onOpenSession(session.id)}
+                          >
+                            <span className="session-list-title">
+                              {session.title || session.id}
+                            </span>
+                            <span className="session-list-meta">
+                              {session.environmentId || 'no environment'} · {session.status}
+                            </span>
+                          </button>
+                          <div className="session-list-actions">
+                            <span
+                              className="mini-pill"
+                              data-tone={toneForSession(session.status)}
+                            >
+                              {session.status}
+                            </span>
+                            <button
+                              className="ghost-button"
+                              type="button"
+                              onClick={() => void onRemoveSession(session.id)}
+                            >
+                              {removable ? 'Remove' : 'Stop'}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))
             ) : (
               <div className="empty-state compact-empty">No sessions yet.</div>
             )}
@@ -163,7 +243,11 @@ export function OverviewPage({
             >
               {showAllSessions
                 ? 'Collapse history'
-                : `Show ${sessions.length - visibleSessions.length} more sessions`}
+                : `Show ${
+                    sessionGroups.reduce((sum, group, index) => {
+                      return sum + (group.items.length - displayedSessionGroups[index].items.length)
+                    }, 0)
+                  } more sessions`}
             </button>
           ) : null}
         </div>
@@ -184,6 +268,94 @@ export function OverviewPage({
           </div>
         </div>
 
+        <section className="overview-hero-grid">
+          <div className="overview-hero-card overview-hero-primary">
+            <div className="overview-hero-copy">
+              <div className="welcome-badge">Control surface</div>
+              <h3>
+                {featuredEnvironment?.activeSessionId
+                  ? 'Resume the current remote conversation.'
+                  : featuredEnvironment
+                    ? 'Start a fresh session on the selected worker.'
+                    : 'Connect a worker to activate the console.'}
+              </h3>
+              <p className="muted">
+                {featuredEnvironment
+                  ? `${featuredEnvironment.directory || 'Unknown directory'} on ${
+                      featuredEnvironment.branch || 'no branch'
+                    } is ready for session work.`
+                  : 'The overview becomes a live control plane once at least one bridge registers.'}
+              </p>
+              {featuredEnvironment ? (
+                <div className="welcome-copy-actions">
+                  <button
+                    className="button welcome-primary-action"
+                    type="button"
+                    disabled={heroSubmitting}
+                    onClick={() => void handleHeroAction()}
+                  >
+                    {featuredEnvironment.activeSessionId
+                      ? 'Open active session'
+                      : heroSubmitting
+                        ? 'Starting…'
+                        : 'Start new session'}
+                  </button>
+                </div>
+              ) : null}
+              <div className="welcome-copy-points">
+                <span>Selected worker ready</span>
+                <span>Transcript-first workflow</span>
+                <span>Live session state</span>
+              </div>
+            </div>
+            <div className="overview-stat-grid">
+              <article className="overview-stat-card">
+                <span className="overview-stat-label">Online workers</span>
+                <strong>{onlineEnvironmentCount}</strong>
+                <span className="overview-stat-meta">{environments.length} total</span>
+              </article>
+              <article className="overview-stat-card">
+                <span className="overview-stat-label">Active sessions</span>
+                <strong>{activeSessionCount}</strong>
+                <span className="overview-stat-meta">Live or attached</span>
+              </article>
+              <article className="overview-stat-card">
+                <span className="overview-stat-label">Ready to start</span>
+                <strong>{readyToStart}</strong>
+                <span className="overview-stat-meta">Idle environments</span>
+              </article>
+            </div>
+          </div>
+
+          {featuredEnvironment ? (
+            <div className="overview-hero-card overview-hero-side">
+              <div className="overview-hero-side-head">
+                <div>
+                  <p className="label">Selected worker</p>
+                  <h3>{featuredEnvironment.machineName || featuredEnvironment.id}</h3>
+                </div>
+                <span className="status-pill" data-tone="good">
+                  {featuredEnvironment.status}
+                </span>
+              </div>
+              <div className="overview-highlight-list">
+                <div>
+                  <span className="overview-highlight-key">Directory</span>
+                  <strong>{featuredEnvironment.directory || '—'}</strong>
+                </div>
+                <div>
+                  <span className="overview-highlight-key">Branch</span>
+                  <strong>{featuredEnvironment.branch || '—'}</strong>
+                </div>
+                <div>
+                  <span className="overview-highlight-key">Worker</span>
+                  <strong>{featuredEnvironment.workerType || '—'}</strong>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
         {hasEnvironments ? (
           <div className="welcome-panel">
             <div className="welcome-orb"></div>
@@ -198,13 +370,19 @@ export function OverviewPage({
                 The main surface is now rendered by React. Pick a worker on the left,
                 then open the chat or spawn a fresh conversation.
               </p>
+              <div className="welcome-copy-points">
+                <span>One selected worker</span>
+                <span>Direct session launch</span>
+                <span>Live transcript on open</span>
+              </div>
             </div>
 
             {featuredEnvironment ? (
               <EnvironmentCard
                 environment={featuredEnvironment}
+                draftTitle={draftTitle}
                 onOpenSession={onOpenSession}
-                onCreateSession={onCreateSession}
+                onDraftTitleChange={setDraftTitle}
                 onRemoveEnvironment={onRemoveEnvironment}
               />
             ) : null}

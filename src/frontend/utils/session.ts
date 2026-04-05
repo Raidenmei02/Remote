@@ -2,6 +2,7 @@ import type { EnvironmentRecord, SessionEventRecord } from '../../shared/protoco
 import type {
   EventListResponse,
   StructuredMessageBlock,
+  StructuredMessageGroup,
   StructuredSessionEntry,
   TimelineItemViewModel,
 } from '../types'
@@ -86,7 +87,7 @@ export function structureSessionEvents(
     return {
       id: event.id,
       seq: event.seq ?? 0,
-      role: normalizeStructuredRole(event.type),
+      role: normalizeStructuredRole(event, blocks),
       createdAt: event.createdAt,
       blocks,
       rawEvent: event,
@@ -165,6 +166,44 @@ export function summarizeStructuredEntry(
         tone: 'warn',
       }
   }
+}
+
+export function groupStructuredEntries(
+  entries: StructuredSessionEntry[],
+): StructuredMessageGroup[] {
+  const groups: StructuredMessageGroup[] = []
+
+  for (const entry of entries) {
+    const previous = groups.at(-1)
+    const canMerge =
+      previous &&
+      entry.role === 'assistant' &&
+      previous.role === 'assistant'
+    const attachResultToAssistant =
+      previous &&
+      entry.role === 'result' &&
+      previous.role === 'assistant'
+
+    if (canMerge || attachResultToAssistant) {
+      previous.entries.push(entry)
+      previous.blocks.push(...entry.blocks)
+      previous.seqEnd = entry.seq
+      previous.createdAt = entry.createdAt
+      continue
+    }
+
+    groups.push({
+      id: entry.id,
+      role: entry.role,
+      createdAt: entry.createdAt,
+      seqStart: entry.seq,
+      seqEnd: entry.seq,
+      entries: [entry],
+      blocks: [...entry.blocks],
+    })
+  }
+
+  return groups
 }
 
 function parseStructuredBlocks(event: SessionEventRecord): StructuredMessageBlock[] {
@@ -274,11 +313,27 @@ function parseStructuredBlocks(event: SessionEventRecord): StructuredMessageBloc
   return blocks
 }
 
-function normalizeStructuredRole(type: string): StructuredSessionEntry['role'] {
-  if (type === 'user' || type === 'assistant' || type === 'system' || type === 'result') {
-    return type
+function normalizeStructuredRole(
+  event: SessionEventRecord,
+  blocks: StructuredMessageBlock[],
+): StructuredSessionEntry['role'] {
+  if (event.type === 'result') {
+    return 'result'
   }
-  return 'system'
+
+  if (blocks.some(block => block.kind === 'tool_use' || block.kind === 'tool_result')) {
+    return 'assistant'
+  }
+
+  if (event.direction === 'web_to_cli') {
+    return 'user'
+  }
+
+  if (event.type === 'assistant' || event.type === 'system') {
+    return event.type
+  }
+
+  return 'assistant'
 }
 
 function stringValue(value: unknown): string {

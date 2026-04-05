@@ -76,6 +76,16 @@ export type StructuredSessionEntry = {
   rawEvent: SessionEventRecord
 }
 
+export type StructuredMessageGroup = {
+  id: string
+  role: StructuredSessionEntry['role']
+  createdAt: string
+  seqStart: number
+  seqEnd: number
+  entries: StructuredSessionEntry[]
+  blocks: StructuredMessageBlock[]
+}
+
 export type TimelineItemViewModel = {
   id: string
   seq: number

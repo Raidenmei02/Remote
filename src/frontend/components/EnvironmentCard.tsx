@@ -1,46 +1,28 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import type { EnvironmentRecord } from '../../shared/protocol'
 import { formatTime, toneForString } from '../utils/format'
 
 type EnvironmentCardProps = {
   environment: EnvironmentRecord
+  draftTitle: string
   onOpenSession: (sessionId: string) => void
-  onCreateSession: (environmentId: string, title: string) => Promise<void>
+  onDraftTitleChange: (value: string) => void
   onRemoveEnvironment: (environmentId: string) => Promise<void>
 }
 
 export function EnvironmentCard({
   environment,
+  draftTitle,
   onOpenSession,
-  onCreateSession,
+  onDraftTitleChange,
   onRemoveEnvironment,
 }: EnvironmentCardProps) {
-  const [title, setTitle] = useState('')
-  const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
-  const inputRef = useRef<HTMLInputElement | null>(null)
   const hasActiveSession = Boolean(environment.activeSessionId)
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (hasActiveSession || submitting) return
-
-    setSubmitting(true)
-    setError('')
-
-    try {
-      await onCreateSession(environment.id, title)
-      setTitle('')
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Failed to start session')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   const remove = async () => {
-    if (submitting || deleting) return
+    if (deleting) return
 
     const confirmed = globalThis.confirm(
       `Delete environment "${environment.id}" and all related sessions, work items, and events?`,
@@ -90,66 +72,49 @@ export function EnvironmentCard({
         </div>
       </dl>
 
-      <div className="card-actions">
+      {hasActiveSession ? (
+        <div className="card-actions card-actions-compact">
+          <button
+            className="button open-session"
+            type="button"
+            onClick={() => {
+              if (environment.activeSessionId) {
+                onOpenSession(environment.activeSessionId)
+              }
+            }}
+          >
+            Open active session
+          </button>
+        </div>
+      ) : (
+        <div className="inline-form create-session-form">
+          <input
+            className="session-title-input"
+            type="text"
+            placeholder="Optional session title"
+            autoComplete="off"
+            value={draftTitle}
+            disabled={deleting}
+            onChange={event => onDraftTitleChange(event.currentTarget.value)}
+          />
+        </div>
+      )}
+
+      <p className="hint session-hint">
+        {hasActiveSession
+          ? `Active session: ${environment.activeSessionId}. Open it instead of starting a second one.`
+          : 'Use the primary action above to start the next session. The title here is optional.'}
+      </p>
+      <div className="environment-card-footer">
         <button
-          className="button open-session"
-          type="button"
-          disabled={!hasActiveSession}
-          onClick={() => {
-            if (hasActiveSession && environment.activeSessionId) {
-              onOpenSession(environment.activeSessionId)
-            }
-          }}
-        >
-          {hasActiveSession ? 'Open session' : 'No active session'}
-        </button>
-        <button
-          className="button secondary create-session"
+          className="ghost-button danger-link delete-environment"
           type="button"
           disabled={deleting}
-          onClick={() => {
-            if (!hasActiveSession) {
-              inputRef.current?.focus()
-            }
-          }}
-        >
-          {hasActiveSession ? 'Attached' : 'New draft'}
-        </button>
-        <button
-          className="button danger delete-environment"
-          type="button"
-          disabled={submitting || deleting}
           onClick={() => void remove()}
         >
           {deleting ? 'Deleting…' : 'Delete environment'}
         </button>
       </div>
-
-      <form className="inline-form create-session-form" onSubmit={submit}>
-        <input
-          ref={inputRef}
-          className="session-title-input"
-          type="text"
-          placeholder="Session title"
-          autoComplete="off"
-          value={title}
-          disabled={hasActiveSession || submitting || deleting}
-          onChange={event => setTitle(event.currentTarget.value)}
-        />
-        <button
-          className="button"
-          type="submit"
-          disabled={hasActiveSession || submitting || deleting}
-        >
-          {submitting ? 'Starting…' : 'Start'}
-        </button>
-      </form>
-
-      <p className="hint session-hint">
-        {hasActiveSession
-          ? `Active session: ${environment.activeSessionId}. Open it instead of starting a second one.`
-          : 'No active session attached.'}
-      </p>
       {error ? <p className="error-text">{error}</p> : null}
     </article>
   )
